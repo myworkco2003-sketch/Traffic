@@ -1,77 +1,132 @@
 
-import {
-  Camera,
-  Map,
-  ViewAnnotation,
-  type CameraRef,
-} from "@maplibre/maplibre-react-native";
-import { Asset } from "expo-asset";
-import * as FileSystem from "expo-file-system/legacy";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Linking,
   Pressable,
   StyleSheet,
+  View,
   Text,
   TextInput,
-  View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  Map,
+  Camera,
+  ViewAnnotation,
+  GeoJSONSource,
+  Layer,
+  type CameraRef,
+} from '@maplibre/maplibre-react-native';
+import { Asset } from 'expo-asset';
+import * as FileSystem from 'expo-file-system/legacy';
 
-import searchIndex from "../../assets/search-index.json";
-import mapStyleJson from "../../assets/style.json";
-import { Pin } from "../components/Pin";
+import mapStyleJson from '../../assets/style.json';
+import { Pin } from '../components/Pin';
 import {
   MAP_BOUNDS,
   useTrip,
   type LngLat,
   type PointKind,
   type TripPoint,
-} from "../state/TripContext";
-
+} from '../state/TripContext';
+import searchIndex from '../../assets/search-index.json';
 const DAMASCUS_CENTER: LngLat = [36.2913, 33.5138];
 
 const COLORS: Record<PointKind, string> = {
-  origin: "#2E9B70",
-  destination: "#E5484D",
+  origin: '#2E9B70',
+  destination: '#E5484D',
 };
 
 const LABELS: Record<PointKind, string> = {
-  origin: "نقطة الانطلاق",
-  destination: "الوجهة",
+  origin: 'نقطة الانطلاق',
+  destination: 'الوجهة',
 };
 
 const HINTS: Record<PointKind, string> = {
-  origin:
-    "اضغط على الخريطة لتحديد نقطة الانطلاق، أو استخدم موقعك",
-  destination: "اضغط على الخريطة لتحديد الوجهة",
+  origin: 'اضغط على الخريطة لتحديد نقطة الانطلاق، أو استخدم موقعك',
+  destination: 'اضغط على الخريطة لتحديد الوجهة',
 };
 
 const ERROR_MESSAGES = {
-  denied:
-    "لم يتم منح إذن الموقع. يمكنك تحديد نقطتك بالضغط على الخريطة.",
-  blocked:
-    "إذن الموقع مرفوض. فعّله من إعدادات الجهاز أو حدّد نقطتك على الخريطة.",
-  unavailable:
-    "تعذّر تحديد موقعك. تأكد من تشغيل GPS أو حدّد نقطتك على الخريطة.",
-  outside: "هذا الموقع خارج نطاق خريطة دمشق المتاحة.",
+  denied: 'لم يتم منح إذن الموقع. يمكنك تحديد نقطتك بالضغط على الخريطة.',
+  blocked: 'إذن الموقع مرفوض. فعّله من إعدادات الجهاز أو حدّد نقطتك على الخريطة.',
+  unavailable: 'تعذّر تحديد موقعك. تأكد من تشغيل GPS أو حدّد نقطتك على الخريطة.',
+  outside: 'هذا الموقع خارج نطاق خريطة دمشق المتاحة.',
 } as const;
 
-type SearchItem = {
-  name: string;
-  nameAr?: string;
-  nameEn?: string;
-  kind: string;
-  longitude: number;
-  latitude: number;
+type SearchItem = { name?: string; nameAr?: string; nameEn?: string; kind?: string; longitude: number; latitude: number; }; const SEARCH_DATA = searchIndex as SearchItem[];
+
+/* =========================================================
+   Route types
+========================================================= */
+
+type RouteStep = {
+  step_order: number;
+  edge_type: 'walk' | 'transfer' | 'bus';
+  route_name: string;
+  duration_minutes: number;
+  geojson: string;
 };
 
-const SEARCH_DATA = searchIndex as SearchItem[];
+type RouteResponse = {
+  steps: RouteStep[];
+};
+
+/* =========================================================
+   Temporary Mock Backend Response
+
+   لاحقاً سيتم استبدال هذا الجزء بالـ API الحقيقي.
+========================================================= */
+
+const MOCK_ROUTE_RESPONSE: RouteResponse = {
+  steps: [
+    {
+      step_order: 1,
+      edge_type: 'walk',
+      route_name: 'Walking Path',
+      duration_minutes: 1.0,
+      geojson:
+        '{"type":"LineString","coordinates":[[36.2892282,33.5135877],[36.2891276,33.5136801],[36.2891068,33.5136974],[36.2890816,33.5137103],[36.289049,33.5137188],[36.2890692,33.5137431],[36.2890944,33.513764],[36.2891193,33.5137786],[36.2891467,33.5137897],[36.2893103,33.5138456],[36.2893586,33.5138557],[36.2894179,33.5138626],[36.2894248,33.5138327],[36.2894333,33.5138132],[36.289449,33.5137975],[36.2894671,33.5137867],[36.2894203,33.5137293],[36.289368,33.5136779]]}',
+    },
+    {
+      step_order: 2,
+      edge_type: 'transfer',
+      route_name: 'Walk/Wait Transfer',
+      duration_minutes: 2.0,
+      geojson:
+        '{"type":"LineString","coordinates":[[36.289228,33.513588],[36.2892282,33.5135877]]}',
+    },
+    {
+      step_order: 3,
+      edge_type: 'bus',
+      route_name: 'Jisr Alhuryah - Dahiyat Qudsaiya Gharbiah',
+      duration_minutes: 4.0,
+      geojson:
+        '{"type":"LineString","coordinates":[[36.289228,33.513588],[36.288959,33.513581],[36.2886875,33.513573],[36.288416,33.513565],[36.28797625,33.513552752],[36.2875365,33.513540503],[36.28709675,33.513528252],[36.286657,33.513516],[36.286219,33.513498501],[36.285781,33.513481],[36.28527975,33.513462503],[36.2847785,33.513444004],[36.28427725,33.513425503],[36.283776,33.513407],[36.28326575,33.513389753],[36.2827555,33.513372504],[36.28224525,33.513355253],[36.281735,33.513338],[36.2813645,33.513320501],[36.280994,33.513303],[36.2807095,33.51329],[36.280425,33.513277],[36.280018,33.513277],[36.279653,33.513285],[36.279288,33.513321],[36.279019,33.513374],[36.278574,33.513417],[36.278562,33.513419],[36.278277501,33.513479251],[36.277993001,33.513539501],[36.277708501,33.513599751],[36.277424,33.51366],[36.2771115,33.5137275],[36.276799,33.513795],[36.276277501,33.513884001],[36.275756,33.513973],[36.275443751,33.514038251],[36.275131501,33.514103502]]}',
+    },
+    {
+      step_order: 4,
+      edge_type: 'transfer',
+      route_name: 'Walk/Wait Transfer',
+      duration_minutes: 2.1,
+      geojson:
+        '{"type":"LineString","coordinates":[[36.275131501,33.514103502],[36.275148,33.5140154]]}',
+    },
+    {
+      step_order: 5,
+      edge_type: 'walk',
+      route_name: 'Walking Path',
+      duration_minutes: 1.2,
+      geojson:
+        '{"type":"LineString","coordinates":[[36.275148,33.5140154],[36.2751015,33.5139366],[36.2750985,33.5138478],[36.2751076,33.5136726],[36.275135,33.5134899],[36.2752149,33.5132967],[36.2753439,33.5132191]]}',
+    },
+  ],
+};
 
 export default function Index() {
-  const [offlineStyle, setOfflineStyle] =
-    useState<any>(null);
+  const [offlineStyle, setOfflineStyle] = useState<any>(null);
 
+  // نقطتا الرحلة
   const {
     origin,
     destination,
@@ -82,37 +137,47 @@ export default function Index() {
     clearPoint,
   } = useTrip();
 
+  // أي نقطة نحددها بالضغط على الخريطة الآن
   const [activeKind, setActiveKind] =
-    useState<PointKind>("origin");
+    useState<PointKind>('origin');
 
   const [cardHeight, setCardHeight] = useState(0);
 
-  const [searchText, setSearchText] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
+  // Search Bar
+  const [searchText, setSearchText] = useState('');
+  // المسار الناتج
+  const [routeGeoJson, setRouteGeoJson] =
+    useState<any>(null);
+
+  // حالة حساب المسار
+  const [loadingRoute, setLoadingRoute] =
+    useState(false);
 
   const cameraRef = useRef<CameraRef>(null);
   const insets = useSafeAreaInsets();
 
-  // =========================================================
-  // تحميل الخريطة والـ MBTiles
-  // =========================================================
+  /* =========================================================
+     Offline Map Setup
+  ========================================================= */
 
   useEffect(() => {
     async function setupOfflineMap() {
       try {
         // 1. تحميل ملف MBTiles المحلي
         const mbtilesAsset = Asset.fromModule(
-          require("../../assets/damascus.mbtiles"),
+          require('../../assets/damascus.mbtiles')
         );
 
         await mbtilesAsset.downloadAsync();
 
-        const dbPath =
-          mbtilesAsset.localUri?.replace("file://", "");
+        const dbPath = mbtilesAsset.localUri?.replace(
+          'file://',
+          ''
+        );
 
         if (!dbPath) {
           throw new Error(
-            "MBTiles database path was not found.",
+            'MBTiles database path was not found.'
           );
         }
 
@@ -129,23 +194,23 @@ export default function Index() {
           });
         }
 
-        // 3. تحميل ملفات Glyphs المحلية
+        // 3. تحميل ملفات Glyphs المحلية الموجودة حالياً
         const glyphFiles = [
           {
             asset: Asset.fromModule(
               require(
-                "../../assets/fonts/Noto Sans Bold/0-255.pbf",
-              ),
+                '../../assets/fonts/Noto Sans Bold/0-255.pbf'
+              )
             ),
-            fileName: "0-255.pbf",
+            fileName: '0-255.pbf',
           },
           {
             asset: Asset.fromModule(
               require(
-                "../../assets/fonts/Noto Sans Bold/1536-1791.pbf",
-              ),
+                '../../assets/fonts/Noto Sans Bold/1536-1791.pbf'
+              )
             ),
-            fileName: "1536-1791.pbf",
+            fileName: '1536-1791.pbf',
           },
         ];
 
@@ -165,66 +230,58 @@ export default function Index() {
 
         // 4. إنشاء نسخة من style.json
         const dynamicStyle = JSON.parse(
-          JSON.stringify(mapStyleJson),
+          JSON.stringify(mapStyleJson)
         );
 
         // =====================================================
-        // 5. تعديل طبقات الخريطة
+        // 5. تعديل جميع طبقات النصوص
         // =====================================================
 
         dynamicStyle.layers =
           dynamicStyle.layers.map((layer: any) => {
-            // -------------------------------------------------
-            // استخدام Noto Sans Bold
-            // -------------------------------------------------
 
+            // استخدام Noto Sans Bold
             if (
-              layer.type === "symbol" &&
-              layer.layout?.["text-font"]
+              layer.type === 'symbol' &&
+              layer.layout?.['text-font']
             ) {
-              layer.layout["text-font"] =
-                ["Noto Sans Bold"];
+              layer.layout['text-font'] = [
+                'Noto Sans Bold',
+              ];
             }
 
-            // -------------------------------------------------
-            // عرض أسماء الأماكن:
-            // Arabic → name → English
-            // -------------------------------------------------
-
+            // تعديل طبقات الأسماء
             if (
-              layer.type === "symbol" &&
-              layer.layout?.["text-field"]
+              layer.type === 'symbol' &&
+              layer.layout?.['text-field']
             ) {
               const textField = JSON.stringify(
-                layer.layout["text-field"],
+                layer.layout['text-field']
               );
 
               const isNameLayer =
-                textField.includes("name:en") ||
+                textField.includes('name:en') ||
                 textField.includes('"name"');
 
               if (isNameLayer) {
-                layer.layout["text-field"] = [
-                  "coalesce",
-                  ["get", "name:ar"],
-                  ["get", "name"],
-                  ["get", "name:en"],
+                layer.layout['text-field'] = [
+                  'coalesce',
+                  ['get', 'name:ar'],
+                  ['get', 'name'],
+                  ['get', 'name:en'],
                 ];
               }
             }
 
-            // -------------------------------------------------
-            // إصلاح Invalid geometry in line layer
-            // -------------------------------------------------
-
+            // منع نقاط الـ park من الدخول في line layers
             if (
-              layer.type === "line" &&
+              layer.type === 'line' &&
               !layer.filter
             ) {
               layer.filter = [
-                "!=",
-                "$type",
-                "Point",
+                '!=',
+                '$type',
+                'Point',
               ];
             }
 
@@ -235,18 +292,20 @@ export default function Index() {
         dynamicStyle.sources.openmaptiles.url =
           `mbtiles://${dbPath}`;
 
-        // 7. الحد الأقصى للـ Zoom
+        // 7. الحد الأقصى للـZoom
         dynamicStyle.sources.openmaptiles.maxzoom = 14;
 
-        // 8. استخدام Glyphs
-        dynamicStyle.glyphs = mapStyleJson.glyphs;
+        // 8. Glyphs
+        dynamicStyle.glyphs =
+          mapStyleJson.glyphs;
 
-        // 9. حفظ الـ Style
+        // 9. حفظ الـStyle المعدل
         setOfflineStyle(dynamicStyle);
+
       } catch (error) {
         console.error(
-          "Failed to load offline map assets:",
-          error,
+          'Failed to load offline map assets:',
+          error
         );
       }
     }
@@ -254,27 +313,13 @@ export default function Index() {
     setupOfflineMap();
   }, []);
 
-  // =========================================================
-  // شاشة التحميل
-  // =========================================================
-
-  if (!offlineStyle) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.loadingText}>
-          Loading offline map...
-        </Text>
-      </View>
-    );
-  }
-
-  // =========================================================
-  // تكبير الخريطة لإظهار النقطتين
-  // =========================================================
+  /* =========================================================
+     Fit map to two points
+  ========================================================= */
 
   const fitBoth = (
     a: LngLat,
-    b: LngLat,
+    b: LngLat
   ) => {
     cameraRef.current?.fitBounds(
       [
@@ -291,57 +336,178 @@ export default function Index() {
           left: 60,
         },
         duration: 600,
-      },
+      }
     );
   };
 
-  // =========================================================
-  // الضغط على الخريطة
-  // =========================================================
+  /* =========================================================
+     Calculate Route
+     
+     حالياً Mock فقط.
+     لاحقاً نستبدل response بالـ API.
+  ========================================================= */
+
+  const handleCalculateRoute = async () => {
+    if (!origin || !destination) {
+      return;
+    }
+
+    setLoadingRoute(true);
+
+    try {
+      /*
+       * حالياً هذا يمثل Response من الـ Backend.
+       *
+       * لاحقاً سيكون مثلاً:
+       *
+       * const response = await fetch(...);
+       * const data = await response.json();
+       */
+
+      const response = MOCK_ROUTE_RESPONSE;
+
+      // تحويل كل GeoJSON إلى Feature
+      const features = response.steps.map(
+        (step) => ({
+          type: 'Feature',
+          properties: {
+            step_order: step.step_order,
+            edge_type: step.edge_type,
+            route_name: step.route_name,
+            duration_minutes:
+              step.duration_minutes,
+          },
+          geometry: JSON.parse(step.geojson),
+        })
+      );
+
+      // FeatureCollection لاستخدامها مع MapLibre
+      const featureCollection = {
+        type: 'FeatureCollection',
+        features,
+      };
+
+      setRouteGeoJson(featureCollection);
+
+      // حساب حدود المسار
+      const coordinates = features.flatMap(
+        (feature: any) =>
+          feature.geometry.coordinates
+      );
+
+      if (coordinates.length > 0) {
+        const lngs = coordinates.map(
+          (coord: number[]) => coord[0]
+        );
+
+        const lats = coordinates.map(
+          (coord: number[]) => coord[1]
+        );
+
+        cameraRef.current?.fitBounds(
+          [
+            Math.min(...lngs),
+            Math.min(...lats),
+            Math.max(...lngs),
+            Math.max(...lats),
+          ],
+          {
+            padding: {
+              top: 180,
+              right: 60,
+              bottom: 280,
+              left: 60,
+            },
+            duration: 800,
+          }
+        );
+      }
+    } catch (error) {
+      console.error(
+        'Failed to calculate route:',
+        error
+      );
+    } finally {
+      setLoadingRoute(false);
+    }
+  };
+
+  const handleSearchSelect = ( item: SearchItem ) => { const lngLat: LngLat = [ item.longitude, item.latitude, ]; 
+  // إذا كان هناك Route قديم، نمسحه 
+  setRouteGeoJson(null); 
+  // تحديد النقطة الحالية 
+  const ok = setPoint( activeKind, lngLat ); if (!ok) return; 
+  // تحريك الخريطة للمكان 
+  cameraRef.current?.flyTo({ center: lngLat, zoom: 16, duration: 800, }); 
+  // إذا حددنا الانطلاق ننتقل تلقائيًا للوجهة 
+  if (activeKind === 'origin') 
+    { 
+      setActiveKind('destination'); 
+
+    } 
+  // إغلاق البحث 
+  setSearchText(''); };
+
+  /* =========================================================
+     Map press
+  ========================================================= */
 
   const handleMapPress = (
-    lngLat: LngLat,
+    lngLat: LngLat
   ) => {
+    // إذا عدّل المستخدم نقطة بعد وجود مسار،
+    // نحذف المسار القديم لأنه لم يعد مطابقاً للنقطتين.
+    if (routeGeoJson) {
+      setRouteGeoJson(null);
+    }
+
     const ok = setPoint(
       activeKind,
-      lngLat,
+      lngLat
     );
 
     if (!ok) return;
 
     const other =
-      activeKind === "origin"
+      activeKind === 'origin'
         ? destination
         : origin;
 
     if (other) {
       fitBoth(
         lngLat,
-        other.lngLat,
+        other.lngLat
       );
     } else if (
-      activeKind === "origin"
+      activeKind === 'origin'
     ) {
-      setActiveKind("destination");
+      // بعد الانطلاق ننتقل تلقائياً للوجهة
+      setActiveKind('destination');
     }
   };
 
-  // =========================================================
-  // استخدام الموقع الحالي
-  // =========================================================
+  /* =========================================================
+     Locate Me
+  ========================================================= */
 
   const handleLocate = async () => {
-    const result = await locateMe();
+    // إذا كان هناك مسار قديم نحذفه
+    if (routeGeoJson) {
+      setRouteGeoJson(null);
+    }
+
+    const result =
+      await locateMe();
 
     if (!result) return;
 
     if (destination) {
       fitBoth(
         result.lngLat,
-        destination.lngLat,
+        destination.lngLat
       );
     } else {
-      setActiveKind("destination");
+      setActiveKind('destination');
 
       cameraRef.current?.flyTo({
         center: result.lngLat,
@@ -350,10 +516,6 @@ export default function Index() {
       });
     }
   };
-
-  // =========================================================
-  // البحث
-  // =========================================================
 
   const showCard =
     origin !== null ||
@@ -364,102 +526,27 @@ export default function Index() {
       ? cardHeight + 12
       : 8;
 
-  const query =
-    searchText
-      .trim()
-      .toLowerCase();
+  const searchQuery = searchText.trim().toLowerCase(); const searchResults = searchQuery ? SEARCH_DATA .filter((item) => { const name = item.name?.toLowerCase() ?? ''; const nameAr = item.nameAr?.toLowerCase() ?? ''; const nameEn = item.nameEn?.toLowerCase() ?? ''; return ( name.includes(searchQuery) || nameAr.includes(searchQuery) || nameEn.includes(searchQuery) ); }) .slice(0, 10) : [];
+  /* =========================================================
+     Loading screen
+  ========================================================= */
 
-  const searchResults = query
-    ? SEARCH_DATA
-        .filter((item) => {
-          const name =
-            item.name
-              ?.toLowerCase() ?? "";
-
-          const nameAr =
-            item.nameAr
-              ?.toLowerCase() ?? "";
-
-          const nameEn =
-            item.nameEn
-              ?.toLowerCase() ?? "";
-
-          return (
-            name.includes(query) ||
-            nameAr.includes(query) ||
-            nameEn.includes(query)
-          );
-        })
-        .slice(0, 10)
-    : [];
-
-  // =========================================================
-  // اختيار نتيجة البحث
-  // =========================================================
-
-  const handleSearchSelect = (
-    item: SearchItem,
-  ) => {
-    const lngLat: LngLat = [
-      item.longitude,
-      item.latitude,
-    ];
-
-    const ok = setPoint(
-      activeKind,
-      lngLat,
+  if (!offlineStyle) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.loadingText}>
+          Loading offline map...
+        </Text>
+      </View>
     );
+  }
 
-    if (!ok) {
-      return;
-    }
-
-    setSearchText(
-      item.nameAr ||
-        item.name ||
-        item.nameEn ||
-        "",
-    );
-
-    setSearchOpen(false);
-
-    const other =
-      activeKind === "origin"
-        ? destination
-        : origin;
-
-    if (other) {
-      fitBoth(
-        lngLat,
-        other.lngLat,
-      );
-    } else {
-      cameraRef.current?.flyTo({
-        center: lngLat,
-        zoom: 16,
-        duration: 800,
-      });
-    }
-
-    // الانتقال تلقائياً للوجهة
-    if (
-      activeKind === "origin"
-    ) {
-      setActiveKind(
-        "destination",
-      );
-    }
-  };
-
-  // =========================================================
-  // UI
-  // =========================================================
+  /* =========================================================
+     Main Screen
+  ========================================================= */
 
   return (
     <View style={styles.container}>
-      {/* ===================================================
-          الخريطة
-         =================================================== */}
 
       <Map
         style={styles.map}
@@ -468,22 +555,107 @@ export default function Index() {
         attribution={false}
         onPress={(event) =>
           handleMapPress(
-            event.nativeEvent
-              .lngLat as LngLat,
+            event.nativeEvent.lngLat as LngLat
           )
         }
       >
+
         <Camera
           ref={cameraRef}
           initialViewState={{
             center: DAMASCUS_CENTER,
             zoom: 13,
           }}
-          minZoom={6}
+          minZoom={9}
           maxBounds={MAP_BOUNDS}
         />
 
-        {/* نقطة الانطلاق */}
+        {/* =================================================
+            Route
+        ================================================= */}
+
+        {routeGeoJson && (
+          <GeoJSONSource
+            id="trip-route"
+            data={routeGeoJson}
+          >
+
+            {/* Walking */}
+            {/* <Layer
+              id="trip-route-walk"
+              type="line"
+              filter={[
+                '==',
+                ['get', 'edge_type'],
+                'walk',
+              ]}
+              style={{
+                lineColor: '#208AEF',
+                lineWidth: 5,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            /> */}
+
+            {/* Transfer */}
+            {/* <Layer
+              id="trip-route-transfer"
+              type="line"
+              filter={[
+                '==',
+                ['get', 'edge_type'],
+                'transfer',
+              ]}
+              style={{
+                lineColor: '#888888',
+                lineWidth: 4,
+                lineDasharray: [2, 2],
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            /> */}
+
+            {/* Walking + Transfer */}
+            <Layer
+              id="trip-route-walk-transfer"
+              type="line"
+              filter={[
+                'in',
+                ['get', 'edge_type'],
+                ['literal', ['walk', 'transfer']],
+              ]}
+              style={{
+                lineColor: '#888888',
+                lineWidth: 4,
+                lineDasharray: [2, 2],
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+
+            {/* Bus */}
+            <Layer
+              id="trip-route-bus"
+              type="line"
+              filter={[
+                '==',
+                ['get', 'edge_type'],
+                'bus',
+              ]}
+              style={{
+                lineColor: '#E5484D',
+                lineWidth: 7,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+
+          </GeoJSONSource>
+        )}
+
+        {/* =================================================
+            Origin Marker
+        ================================================= */}
 
         {origin && (
           <ViewAnnotation
@@ -491,226 +663,167 @@ export default function Index() {
             lngLat={origin.lngLat}
             anchor="bottom"
             draggable
-            onDragEnd={(event) =>
+            onDragEnd={(event) => {
+              setRouteGeoJson(null);
+
               setPoint(
-                "origin",
-                event.nativeEvent
-                  .lngLat as LngLat,
-              )
-            }
+                'origin',
+                event.nativeEvent.lngLat as LngLat
+              );
+            }}
           >
-            <Pin
-              color={
-                COLORS.origin
-              }
-            />
+            <Pin color={COLORS.origin} />
           </ViewAnnotation>
         )}
 
-        {/* الوجهة */}
+        {/* =================================================
+            Destination Marker
+        ================================================= */}
 
         {destination && (
           <ViewAnnotation
             id="destination"
-            lngLat={
-              destination.lngLat
-            }
+            lngLat={destination.lngLat}
             anchor="bottom"
             draggable
-            onDragEnd={(event) =>
+            onDragEnd={(event) => {
+              setRouteGeoJson(null);
+
               setPoint(
-                "destination",
-                event.nativeEvent
-                  .lngLat as LngLat,
-              )
-            }
+                'destination',
+                event.nativeEvent.lngLat as LngLat
+              );
+            }}
           >
-            <Pin
-              color={
-                COLORS.destination
-              }
-            />
+            <Pin color={COLORS.destination} />
           </ViewAnnotation>
         )}
+
       </Map>
 
       {/* ===================================================
-          اللوحة العلوية
-         =================================================== */}
+    Search Bar
+=================================================== */}
+
+<View
+  style={[
+    styles.searchContainer,
+    {
+      top: insets.top + 12,
+    },
+  ]}
+>
+  <View style={styles.searchBar}>
+    <Text style={styles.searchIcon}>
+      🔍
+    </Text>
+
+    <TextInput
+      value={searchText}
+      onChangeText={setSearchText}
+      placeholder={
+        activeKind === 'origin'
+          ? 'ابحث عن نقطة الانطلاق'
+          : 'ابحث عن الوجهة'
+      }
+      placeholderTextColor="#888"
+      style={styles.searchInput}
+      textAlign="right"
+      autoCorrect={false}
+    />
+
+    {searchText.length > 0 && (
+      <Pressable
+        onPress={() => setSearchText('')}
+        style={styles.searchClear}
+      >
+        <Text style={styles.searchClearText}>
+          ×
+        </Text>
+      </Pressable>
+    )}
+  </View>
+
+  {searchQuery.length > 0 &&
+    searchResults.length > 0 && (
+      <View style={styles.searchResults}>
+        {searchResults.map(
+          (item, index) => (
+            <Pressable
+              key={`${item.longitude}-${item.latitude}-${index}`}
+              style={styles.searchResult}
+              onPress={() =>
+                handleSearchSelect(item)
+              }
+            >
+              <View style={styles.searchResultText}>
+                <Text
+                  style={styles.searchResultArabic}
+                  numberOfLines={1}
+                >
+                  {item.nameAr ||
+                    item.name ||
+                    item.nameEn ||
+                    'بدون اسم'}
+                </Text>
+
+                {item.nameEn &&
+                  item.nameEn !== item.nameAr && (
+                    <Text
+                      style={styles.searchResultEnglish}
+                      numberOfLines={1}
+                    >
+                      {item.nameEn}
+                    </Text>
+                  )}
+              </View>
+            </Pressable>
+          )
+        )}
+        </View>
+      )}
+
+      {searchQuery.length > 0 &&
+        searchResults.length === 0 && (
+          <View style={styles.noSearchResults}>
+            <Text style={styles.noSearchResultsText}>
+              لا توجد نتائج
+            </Text>
+          </View>
+        )}
+    </View>
+      {/* ===================================================
+          Top Panel
+      =================================================== */}
 
       <View
         style={[
           styles.topPanel,
           {
-            top:
-              insets.top + 10,
+            top: insets.top + 70,
           },
         ]}
       >
-        {/* البحث */}
 
-        <View
-          style={
-            styles.searchContainer
-          }
-        >
-          <Text
-            style={
-              styles.searchIcon
-            }
-          >
-            ⌕
-          </Text>
+        <View style={styles.chips}>
 
-          <TextInput
-            value={searchText}
-            onChangeText={(text) => {
-              setSearchText(text);
-              setSearchOpen(true);
-            }}
-            onFocus={() => {
-              setSearchOpen(true);
-            }}
-            placeholder={
-              activeKind === "origin"
-                ? "ابحث عن نقطة الانطلاق"
-                : "ابحث عن الوجهة"
-            }
-            placeholderTextColor="#8A8A8A"
-            style={
-              styles.searchInput
-            }
-            returnKeyType="search"
-          />
-
-          {searchText.length >
-            0 && (
-            <Pressable
-              style={
-                styles.clearSearchButton
-              }
-              onPress={() => {
-                setSearchText("");
-                setSearchOpen(false);
-              }}
-            >
-              <Text
-                style={
-                  styles.clearSearchText
-                }
-              >
-                ×
-              </Text>
-            </Pressable>
-          )}
-        </View>
-
-        {/* نتائج البحث */}
-
-        {searchOpen &&
-          searchResults.length >
-            0 && (
-            <View
-              style={
-                styles.searchResults
-              }
-            >
-              {searchResults.map(
-                (
-                  item,
-                  index,
-                ) => (
-                  <Pressable
-                    key={`${item.name}-${item.longitude}-${item.latitude}-${index}`}
-                    onPress={() => {
-                      handleSearchSelect(
-                        item,
-                      );
-                    }}
-                    style={[
-                      styles.searchResult,
-                      index ===
-                        searchResults.length -
-                          1 &&
-                        styles.searchResultLast,
-                    ]}
-                  >
-                    <View
-                      style={
-                        styles.resultIcon
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.resultIconText
-                        }
-                      >
-                        ●
-                      </Text>
-                    </View>
-
-                    <View
-                      style={
-                        styles.resultInfo
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.resultName
-                        }
-                      >
-                        {item.nameAr ||
-                          item.name}
-                      </Text>
-
-                      {item.nameEn &&
-                        item.nameEn !==
-                          item.nameAr && (
-                          <Text
-                            style={
-                              styles.resultNameEn
-                            }
-                          >
-                            {
-                              item.nameEn
-                            }
-                          </Text>
-                        )}
-                    </View>
-                  </Pressable>
-                ),
-              )}
-            </View>
-          )}
-
-        {/* اختيار الانطلاق والوجهة */}
-
-        <View
-          style={
-            styles.pointSelector
-          }
-        >
           {(
-            [
-              "origin",
-              "destination",
-            ] as const
+            ['origin', 'destination'] as const
           ).map((kind) => {
+
             const active =
-              activeKind ===
-              kind;
+              activeKind === kind;
 
             const isSet =
-              kind === "origin"
+              kind === 'origin'
                 ? origin !== null
-                : destination !==
-                  null;
+                : destination !== null;
 
             return (
               <Pressable
                 key={kind}
                 style={[
-                  styles.pointButton,
+                  styles.chip,
                   active && {
                     backgroundColor:
                       COLORS[kind],
@@ -718,108 +831,49 @@ export default function Index() {
                       COLORS[kind],
                   },
                 ]}
-                onPress={() => {
-                  setActiveKind(
-                    kind,
-                  );
-                  setSearchOpen(
-                    false,
-                  );
-                }}
+                onPress={() =>
+                  setActiveKind(kind)
+                }
               >
-                <View
-                  style={[
-                    styles.pointDot,
-                    {
-                      backgroundColor:
-                        active
-                          ? "#FFFFFF"
-                          : COLORS[kind],
-                    },
-                  ]}
-                />
-
                 <Text
                   style={[
-                    styles.pointButtonText,
+                    styles.chipText,
                     active &&
-                      styles.pointButtonTextActive,
+                      styles.chipTextActive,
                   ]}
                 >
+                  {isSet ? '✓ ' : ''}
                   {LABELS[kind]}
                 </Text>
-
-                {isSet && (
-                  <Text
-                    style={[
-                      styles.pointCheck,
-                      active &&
-                        styles.pointCheckActive,
-                    ]}
-                  >
-                    ✓
-                  </Text>
-                )}
               </Pressable>
             );
           })}
+
         </View>
 
-        {/* رسالة الحالة */}
+        <Text style={styles.bannerText}>
+          {error
+            ? ERROR_MESSAGES[error]
+            : HINTS[activeKind]}
+        </Text>
 
-        <View
-          style={
-            styles.hintContainer
-          }
-        >
-          <Text
-            style={
-              styles.hintIcon
-            }
-          >
-            {error ? "!" : "i"}
-          </Text>
-
-          <Text
-            style={
-              styles.bannerText
-            }
-          >
-            {error
-              ? ERROR_MESSAGES[
-                  error
-                ]
-              : HINTS[
-                  activeKind
-                ]}
-          </Text>
-        </View>
-
-        {/* فتح الإعدادات */}
-
-        {error === "blocked" && (
+        {error === 'blocked' && (
           <Pressable
-            style={
-              styles.settingsButton
-            }
             onPress={() =>
               Linking.openSettings()
             }
           >
-            <Text
-              style={
-                styles.bannerLink
-              }
-            >
+            <Text style={styles.bannerLink}>
               فتح الإعدادات
             </Text>
           </Pressable>
         )}
+
       </View>
 
       {/* ===================================================
-          زر موقعي
-         =================================================== */}
+          GPS Button
+      =================================================== */}
 
       <Pressable
         style={[
@@ -831,34 +885,20 @@ export default function Index() {
               cardSpace,
           },
         ]}
-        onPress={
-          handleLocate
-        }
+        onPress={handleLocate}
         disabled={locating}
         accessibilityLabel="استخدم موقعي الحالي كنقطة انطلاق"
       >
-        <Text
-          style={
-            styles.locateIcon
-          }
-        >
-          ⌖
-        </Text>
-
-        <Text
-          style={
-            styles.locateButtonText
-          }
-        >
+        <Text style={styles.locateButtonText}>
           {locating
-            ? "..."
-            : "موقعي"}
+            ? '...'
+            : '📍 موقعي'}
         </Text>
       </Pressable>
 
       {/* ===================================================
-          بطاقة نقاط الرحلة
-         =================================================== */}
+          Points Card
+      =================================================== */}
 
       {showCard && (
         <View
@@ -866,59 +906,76 @@ export default function Index() {
             styles.card,
             {
               bottom:
-                insets.bottom +
-                16,
+                insets.bottom + 16,
             },
           ]}
           onLayout={(e) =>
             setCardHeight(
-              e.nativeEvent
-                .layout.height,
+              e.nativeEvent.layout.height
             )
           }
         >
+
           <PointRow
             kind="origin"
             point={origin}
             onClear={() => {
-              clearPoint(
-                "origin",
-              );
-              setActiveKind(
-                "origin",
-              );
+              setRouteGeoJson(null);
+              clearPoint('origin');
+              setActiveKind('origin');
             }}
           />
 
-          <View
-            style={
-              styles.divider
-            }
-          />
+          <View style={styles.divider} />
 
           <PointRow
             kind="destination"
-            point={
-              destination
-            }
+            point={destination}
             onClear={() => {
-              clearPoint(
-                "destination",
-              );
-              setActiveKind(
-                "destination",
-              );
+              setRouteGeoJson(null);
+              clearPoint('destination');
+              setActiveKind('destination');
             }}
           />
+
+          {/* =================================================
+              Calculate Route Button
+          ================================================= */}
+
+          {origin && destination && (
+            <Pressable
+              style={[
+                styles.routeButton,
+                loadingRoute &&
+                  styles.routeButtonDisabled,
+              ]}
+              onPress={
+                handleCalculateRoute
+              }
+              disabled={loadingRoute}
+            >
+              <Text
+                style={
+                  styles.routeButtonText
+                }
+              >
+                {loadingRoute
+                  ? 'جاري حساب المسار...'
+                  : '🚌 احسب المسار'}
+              </Text>
+            </Pressable>
+          )}
+
         </View>
       )}
+
     </View>
   );
 }
 
-// ===========================================================
-// Point Row
-// ===========================================================
+/* =========================================================
+   Point Row
+========================================================= */
 
 function PointRow({
   kind,
@@ -931,6 +988,7 @@ function PointRow({
 }) {
   return (
     <View style={styles.row}>
+
       <View
         style={[
           styles.rowDot,
@@ -941,97 +999,71 @@ function PointRow({
         ]}
       />
 
-      <View
-        style={
-          styles.rowInfo
-        }
-      >
-        <Text
-          style={
-            styles.rowTitle
-          }
-        >
+      <View style={styles.rowInfo}>
+
+        <Text style={styles.rowTitle}>
           {LABELS[kind]}
+
+          {point
+            ? ` (${
+                point.source === 'gps'
+                  ? 'GPS'
+                  : 'من الخريطة'
+              })`
+            : ''}
         </Text>
 
         {point ? (
-          <>
-            <Text
-              style={
-                styles.rowCoords
-              }
-            >
-              {point.source ===
-              "gps"
-                ? "📍 الموقع الحالي"
-                : `${point.lngLat[1].toFixed(
-                    5,
-                  )}, ${point.lngLat[0].toFixed(
-                    5,
-                  )}`}
-            </Text>
-
-            {point.accuracy !=
-              null &&
-              point.accuracy >
-                100 && (
-                <Text
-                  style={
-                    styles.rowWarning
-                  }
-                >
-                  دقة الموقع منخفضة
-                  {" "}
-                  (±
-                  {Math.round(
-                    point.accuracy,
-                  )}{" "}
-                  م)
-                </Text>
-              )}
-          </>
+          <Text style={styles.rowCoords}>
+            {point.lngLat[1].toFixed(5)},{' '}
+            {point.lngLat[0].toFixed(5)}
+          </Text>
         ) : (
-          <Text
-            style={
-              styles.rowEmpty
-            }
-          >
+          <Text style={styles.rowEmpty}>
             لم تُحدد بعد
           </Text>
         )}
+
+        {point?.accuracy != null &&
+          point.accuracy > 100 && (
+            <Text
+              style={styles.rowWarning}
+            >
+              دقة الموقع منخفضة
+              (±
+              {Math.round(
+                point.accuracy
+              )}
+              م) — اسحب المؤشر لتصحيحه
+            </Text>
+          )}
+
       </View>
 
       {point && (
         <Pressable
-          style={
-            styles.clearButton
-          }
-          onPress={
-            onClear
-          }
+          onPress={onClear}
           accessibilityLabel={`إلغاء ${LABELS[kind]}`}
         >
-          <Text
-            style={
-              styles.clearText
-            }
-          >
+          <Text style={styles.clearText}>
             إلغاء
           </Text>
         </Pressable>
       )}
+
     </View>
   );
 }
 
-// ===========================================================
-// Styles
-// ===========================================================
+/* =========================================================
+   Styles
+========================================================= */
 
 const styles = StyleSheet.create({
+
   container: {
     flex: 1,
-    backgroundColor: "#EDEDED",
+    backgroundColor: '#1a1a1a',
   },
 
   map: {
@@ -1040,338 +1072,119 @@ const styles = StyleSheet.create({
 
   center: {
     flex: 1,
-    backgroundColor: "#F5F6F7",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: '#1a1a1a',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   loadingText: {
-    color: "#333",
-    fontSize: 15,
+    color: 'white',
   },
 
-  // =========================================================
-  // Top Panel
-  // =========================================================
+  /* =========================
+     Top Panel
+  ========================= */
 
   topPanel: {
-    position: "absolute",
+    position: 'absolute',
     left: 12,
     right: 12,
-    zIndex: 100,
-  },
-
-  // =========================================================
-  // Search
-  // =========================================================
-
-  searchContainer: {
-    height: 54,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    paddingHorizontal: 14,
-
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-
-  searchIcon: {
-    fontSize: 25,
-    color: "#555",
-    marginLeft: 8,
-  },
-
-  searchInput: {
-    flex: 1,
-    height: 54,
-    fontSize: 16,
-    color: "#111",
-    textAlign: "right",
-    paddingHorizontal: 8,
-  },
-
-  clearSearchButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "#EEEEEE",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  clearSearchText: {
-    color: "#666",
-    fontSize: 21,
-    lineHeight: 23,
-  },
-
-  // =========================================================
-  // Search Results
-  // =========================================================
-
-  searchResults: {
-    marginTop: 6,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    overflow: "hidden",
-
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-
-  searchResult: {
-    minHeight: 62,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEEEEE",
-  },
-
-  searchResultLast: {
-    borderBottomWidth: 0,
-  },
-
-  resultIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#F0F4F2",
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 12,
-  },
-
-  resultIconText: {
-    color: "#2E9B70",
-    fontSize: 12,
-  },
-
-  resultInfo: {
-    flex: 1,
-  },
-
-  resultName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#111",
-    textAlign: "right",
-  },
-
-  resultNameEn: {
-    marginTop: 3,
-    fontSize: 12,
-    color: "#888",
-    textAlign: "right",
-  },
-
-  // =========================================================
-  // Origin / Destination
-  // =========================================================
-
-  pointSelector: {
-    flexDirection: "row-reverse",
-    gap: 8,
-    marginTop: 10,
-  },
-
-  pointButton: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: "#FFFFFF",
-    backgroundColor:
-      "rgba(255,255,255,0.96)",
-
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 10,
-
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 5,
-    elevation: 3,
-  },
-
-  pointDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    marginLeft: 7,
-  },
-
-  pointButtonText: {
-    color: "#333",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
-  pointButtonTextActive: {
-    color: "#FFFFFF",
-  },
-
-  pointCheck: {
-    marginRight: 6,
-    color: "#2E9B70",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-
-  pointCheckActive: {
-    color: "#FFFFFF",
-  },
-
-  // =========================================================
-  // Hint
-  // =========================================================
-
-  hintContainer: {
-    marginTop: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    padding: 12,
     borderRadius: 12,
     backgroundColor:
-      "rgba(255,255,255,0.92)",
-
-    flexDirection: "row-reverse",
-    alignItems: "center",
+      'rgba(0,0,0,0.75)',
   },
 
-  hintIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#E9EEF5",
-    color: "#4D6680",
-    textAlign: "center",
-    lineHeight: 20,
-    fontSize: 12,
-    fontWeight: "700",
-    marginLeft: 8,
+  chips: {
+    flexDirection: 'row-reverse',
+    gap: 8,
+    marginBottom: 10,
+  },
+
+  chip: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor:
+      'rgba(255,255,255,0.4)',
+    alignItems: 'center',
+  },
+
+  chipText: {
+    color:
+      'rgba(255,255,255,0.85)',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  chipTextActive: {
+    color: 'white',
   },
 
   bannerText: {
-    flex: 1,
-    color: "#555",
-    fontSize: 12,
-    textAlign: "right",
-    lineHeight: 18,
-  },
-
-  settingsButton: {
-    alignSelf: "flex-end",
-    marginTop: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    color: 'white',
+    fontSize: 13,
+    textAlign: 'right',
   },
 
   bannerLink: {
-    color: "#208AEF",
-    fontSize: 12,
-    fontWeight: "600",
+    color: '#7CC0FF',
+    marginTop: 6,
+    textAlign: 'right',
   },
 
-  // =========================================================
-  // Locate Button
-  // =========================================================
+  /* =========================
+     Locate Button
+  ========================= */
 
   locateButton: {
-    position: "absolute",
+    position: 'absolute',
     right: 16,
-    minWidth: 104,
-    height: 46,
-    paddingHorizontal: 16,
-    borderRadius: 23,
-    backgroundColor: "#FFFFFF",
-
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    justifyContent: "center",
-
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.18,
-    shadowRadius: 7,
-    elevation: 6,
-  },
-
-  locateIcon: {
-    fontSize: 21,
-    color: "#208AEF",
-    marginLeft: 7,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 24,
+    backgroundColor: '#208AEF',
   },
 
   locateButtonText: {
-    color: "#222",
-    fontSize: 14,
-    fontWeight: "700",
+    color: 'white',
+    fontWeight: '600',
   },
 
-  // =========================================================
-  // Bottom Card
-  // =========================================================
+  /* =========================
+     Card
+  ========================= */
 
   card: {
-    position: "absolute",
+    position: 'absolute',
     left: 12,
     right: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 18,
-    backgroundColor: "#FFFFFF",
-
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: -2,
-    },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 8,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: 'white',
   },
 
   divider: {
     height: 1,
-    backgroundColor: "#EEEEEE",
-    marginVertical: 11,
-    marginLeft: 22,
+    backgroundColor: '#E5E5E5',
+    marginVertical: 10,
   },
 
+  /* =========================
+     Point Row
+  ========================= */
+
   row: {
-    minHeight: 52,
-    flexDirection: "row-reverse",
-    alignItems: "center",
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 10,
   },
 
   rowDot: {
-    width: 13,
-    height: 13,
-    borderRadius: 7,
-    marginLeft: 12,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
   },
 
   rowInfo: {
@@ -1379,42 +1192,56 @@ const styles = StyleSheet.create({
   },
 
   rowTitle: {
-    color: "#222",
-    fontSize: 14,
-    fontWeight: "700",
-    textAlign: "right",
+    fontWeight: '600',
+    textAlign: 'right',
   },
 
   rowCoords: {
-    color: "#777",
-    fontSize: 12,
-    marginTop: 4,
-    textAlign: "right",
+    color: '#555',
+    marginTop: 2,
+    textAlign: 'right',
   },
 
   rowEmpty: {
-    color: "#AAAAAA",
-    fontSize: 12,
-    marginTop: 4,
-    textAlign: "right",
+    color: '#999',
+    marginTop: 2,
+    textAlign: 'right',
   },
 
   rowWarning: {
-    color: "#B54B45",
-    fontSize: 11,
+    color: '#B54B45',
     marginTop: 4,
-    textAlign: "right",
-  },
-
-  clearButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    marginRight: 8,
+    fontSize: 12,
+    textAlign: 'right',
   },
 
   clearText: {
-    color: "#C44747",
-    fontSize: 12,
-    fontWeight: "700",
+    color: '#B54B45',
+    fontWeight: '600',
+    paddingHorizontal: 8,
   },
+
+  /* =========================
+     Route Button
+  ========================= */
+
+  routeButton: {
+    marginTop: 14,
+    paddingVertical: 13,
+    borderRadius: 10,
+    backgroundColor: '#208AEF',
+    alignItems: 'center',
+  },
+
+  routeButtonDisabled: {
+    opacity: 0.6,
+  },
+
+  routeButtonText: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  /* ========================= Search Bar ========================= */ searchContainer: { position: 'absolute', left: 12, right: 12, zIndex: 20, }, searchBar: { height: 50, backgroundColor: 'white', borderRadius: 12, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, shadowOpacity: 0.15, shadowRadius: 6, shadowOffset: { width: 0, height: 2, }, elevation: 5, }, searchIcon: { fontSize: 20, marginLeft: 8, }, searchInput: { flex: 1, height: 50, color: '#222', fontSize: 15, paddingHorizontal: 8, }, searchClear: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', }, searchClearText: { fontSize: 24, color: '#777', lineHeight: 26, }, searchResults: { marginTop: 6, backgroundColor: 'white', borderRadius: 12, overflow: 'hidden', shadowOpacity: 0.15, shadowRadius: 6, shadowOffset: { width: 0, height: 2, }, elevation: 5, }, searchResult: { paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#EEEEEE', }, searchResultText: { flex: 1, }, searchResultArabic: { color: '#222', fontSize: 14, fontWeight: '600', textAlign: 'right', }, searchResultEnglish: { color: '#777', fontSize: 12, marginTop: 3, textAlign: 'right', }, noSearchResults: { marginTop: 6, backgroundColor: 'white', borderRadius: 12, padding: 15, }, noSearchResultsText: { color: '#777', textAlign: 'right', fontSize: 14, },
+
 });
