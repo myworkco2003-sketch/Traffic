@@ -29,7 +29,7 @@ export type TripError =
 
 // حدود damascus.mbtiles (من جدول metadata): [west, south, east, north]
 export const MAP_BOUNDS: [number, number, number, number] = [
-  35.841, 33.112, 36.73, 33.805,
+  35.6, 32.3, 42.4, 37.4,
 ];
 
 export const isInsideCoverage = ([lng, lat]: LngLat) =>
