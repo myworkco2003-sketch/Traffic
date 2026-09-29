@@ -5,6 +5,8 @@
   "dependencies": {
     "@expo/ui": "~57.0.19",
     "@maplibre/maplibre-react-native": "^11.4.0",
+    "eas": "^0.1.0",
+    "eas-cli": "^24.8.0",
     "expo": "~57.0.24",
     "expo-asset": "~57.0.18",
     "expo-constants": "~57.0.19",
