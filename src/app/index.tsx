@@ -987,72 +987,76 @@ export default function Index() {
       {/* ===================================================
     Search Bar
 =================================================== */}
+      {routeResponse === null && (
+        <View
+          style={[
+            styles.searchContainer,
+            {
+              top: insets.top + 12,
+            },
+          ]}
+        >
+          <View style={styles.searchBar}>
+            <Text style={styles.searchIcon}>🔍</Text>
 
-      <View
-        style={[
-          styles.searchContainer,
-          {
-            top: insets.top + 12,
-          },
-        ]}
-      >
-        <View style={styles.searchBar}>
-          <Text style={styles.searchIcon}>🔍</Text>
+            <TextInput
+              value={searchText}
+              onChangeText={setSearchText}
+              placeholder={
+                activeKind === "origin"
+                  ? "ابحث عن نقطة الانطلاق"
+                  : "ابحث عن الوجهة"
+              }
+              placeholderTextColor="#888"
+              style={styles.searchInput}
+              textAlign="right"
+              autoCorrect={false}
+            />
 
-          <TextInput
-            value={searchText}
-            onChangeText={setSearchText}
-            placeholder={
-              activeKind === "origin"
-                ? "ابحث عن نقطة الانطلاق"
-                : "ابحث عن الوجهة"
-            }
-            placeholderTextColor="#888"
-            style={styles.searchInput}
-            textAlign="right"
-            autoCorrect={false}
-          />
+            {searchText.length > 0 && (
+              <Pressable
+                onPress={() => setSearchText("")}
+                style={styles.searchClear}
+              >
+                <Text style={styles.searchClearText}>×</Text>
+              </Pressable>
+            )}
+          </View>
 
-          {searchText.length > 0 && (
-            <Pressable
-              onPress={() => setSearchText("")}
-              style={styles.searchClear}
-            >
-              <Text style={styles.searchClearText}>×</Text>
-            </Pressable>
+          {searchQuery.length > 0 && searchResults.length > 0 && (
+            <View style={styles.searchResults}>
+              {searchResults.map((item, index) => (
+                <Pressable
+                  key={`${item.longitude}-${item.latitude}-${index}`}
+                  style={styles.searchResult}
+                  onPress={() => handleSearchSelect(item)}
+                >
+                  <View style={styles.searchResultText}>
+                    <Text style={styles.searchResultArabic} numberOfLines={1}>
+                      {item.nameAr || item.name || item.nameEn || "بدون اسم"}
+                    </Text>
+
+                    {item.nameEn && item.nameEn !== item.nameAr && (
+                      <Text
+                        style={styles.searchResultEnglish}
+                        numberOfLines={1}
+                      >
+                        {item.nameEn}
+                      </Text>
+                    )}
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
+          {searchQuery.length > 0 && searchResults.length === 0 && (
+            <View style={styles.noSearchResults}>
+              <Text style={styles.noSearchResultsText}>لا توجد نتائج</Text>
+            </View>
           )}
         </View>
-
-        {searchQuery.length > 0 && searchResults.length > 0 && (
-          <View style={styles.searchResults}>
-            {searchResults.map((item, index) => (
-              <Pressable
-                key={`${item.longitude}-${item.latitude}-${index}`}
-                style={styles.searchResult}
-                onPress={() => handleSearchSelect(item)}
-              >
-                <View style={styles.searchResultText}>
-                  <Text style={styles.searchResultArabic} numberOfLines={1}>
-                    {item.nameAr || item.name || item.nameEn || "بدون اسم"}
-                  </Text>
-
-                  {item.nameEn && item.nameEn !== item.nameAr && (
-                    <Text style={styles.searchResultEnglish} numberOfLines={1}>
-                      {item.nameEn}
-                    </Text>
-                  )}
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        )}
-
-        {searchQuery.length > 0 && searchResults.length === 0 && (
-          <View style={styles.noSearchResults}>
-            <Text style={styles.noSearchResultsText}>لا توجد نتائج</Text>
-          </View>
-        )}
-      </View>
+      )}
       {/* ===================================================
           Top Panel
       =================================================== */}
@@ -1061,7 +1065,7 @@ export default function Index() {
         style={[
           styles.topPanel,
           {
-            top: insets.top + 70,
+            top: routeResponse === null ? insets.top + 70 : insets.top + 12,
           },
         ]}
       >
@@ -1463,8 +1467,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
   },
-  /* ========================= Search Bar ========================= */ searchContainer:
-    { position: "absolute", left: 12, right: 12, zIndex: 20 },
+  /* ========================= Search Bar ========================= */
+  searchContainer: { position: "absolute", left: 12, right: 12, zIndex: 20 },
   searchBar: {
     height: 50,
     backgroundColor: "white",
