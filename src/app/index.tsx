@@ -914,10 +914,10 @@ export default function Index() {
             anchor="bottom"
             draggable
             onDragEnd={(event) => {
+              setRouteResponse(null);
               setRouteGeoJson(null);
               setBoardingPoints([]);
               setAlightingPoints([]);
-              setRouteResponse(null);
 
               setPoint("origin", event.nativeEvent.lngLat as LngLat);
             }}
@@ -937,10 +937,10 @@ export default function Index() {
             anchor="bottom"
             draggable
             onDragEnd={(event) => {
+              setRouteResponse(null);
               setRouteGeoJson(null);
               setBoardingPoints([]);
               setAlightingPoints([]);
-              setRouteResponse(null);
 
               setPoint("destination", event.nativeEvent.lngLat as LngLat);
             }}
@@ -1086,7 +1086,11 @@ export default function Index() {
                     borderColor: COLORS[kind],
                   },
                 ]}
-                onPress={() => setActiveKind(kind)}
+                // onPress={() => setActiveKind(kind)}
+                onPress={() => {
+                  setRouteResponse(null);
+                  setActiveKind(kind);
+                }}
               >
                 <Text
                   style={[styles.chipText, active && styles.chipTextActive]}
