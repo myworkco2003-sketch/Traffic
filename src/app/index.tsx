@@ -24,6 +24,8 @@ import searchIndex from "../../assets/search-index.json";
 import mapStyleJson from "../../assets/style.json";
 import { Pin } from "../components/Pin";
 import { TripDetailsSheet } from "../components/TripDetailsSheet";
+import { loadOfflineGraph } from "../routing/OfflineGraphLoader";
+import { routeOffline } from "../routing/OfflineRouter";
 import {
   MAP_BOUNDS,
   useTrip,
@@ -222,6 +224,119 @@ export default function Index() {
      Offline Map Setup
   ========================================================= */
 
+  // useEffect(() => {
+  //   async function setupOfflineMap() {
+  //     try {
+  //       // 1. تحميل ملف MBTiles المحلي
+  //       const mbtilesAsset = Asset.fromModule(
+  //         require("../../assets/damascus.mbtiles"),
+  //       );
+
+  //       await mbtilesAsset.downloadAsync();
+
+  //       const dbPath = mbtilesAsset.localUri?.replace("file://", "");
+
+  //       if (!dbPath) {
+  //         throw new Error("MBTiles database path was not found.");
+  //       }
+
+  //       // 2. تجهيز مجلد الخطوط
+  //       const fontDir = `${FileSystem.documentDirectory}fonts/Noto Sans Bold/`;
+
+  //       const dirInfo = await FileSystem.getInfoAsync(fontDir);
+
+  //       if (!dirInfo.exists) {
+  //         await FileSystem.makeDirectoryAsync(fontDir, {
+  //           intermediates: true,
+  //         });
+  //       }
+
+  //       // 3. تحميل ملفات Glyphs المحلية الموجودة حالياً
+  //       const glyphFiles = [
+  //         {
+  //           asset: Asset.fromModule(
+  //             require("../../assets/fonts/Noto Sans Bold/0-255.pbf"),
+  //           ),
+  //           fileName: "0-255.pbf",
+  //         },
+  //         {
+  //           asset: Asset.fromModule(
+  //             require("../../assets/fonts/Noto Sans Bold/1536-1791.pbf"),
+  //           ),
+  //           fileName: "1536-1791.pbf",
+  //         },
+  //       ];
+
+  //       for (const glyph of glyphFiles) {
+  //         await glyph.asset.downloadAsync();
+
+  //         if (glyph.asset.localUri) {
+  //           const destination = `${fontDir}${glyph.fileName}`;
+
+  //           await FileSystem.copyAsync({
+  //             from: glyph.asset.localUri,
+  //             to: destination,
+  //           });
+  //         }
+  //       }
+
+  //       // 4. إنشاء نسخة من style.json
+  //       const dynamicStyle = JSON.parse(JSON.stringify(mapStyleJson));
+
+  //       // =====================================================
+  //       // 5. تعديل جميع طبقات النصوص
+  //       // =====================================================
+
+  //       dynamicStyle.layers = dynamicStyle.layers.map((layer: any) => {
+  //         // استخدام Noto Sans Bold
+  //         if (layer.type === "symbol" && layer.layout?.["text-font"]) {
+  //           layer.layout["text-font"] = ["Noto Sans Bold"];
+  //         }
+
+  //         // تعديل طبقات الأسماء
+  //         if (layer.type === "symbol" && layer.layout?.["text-field"]) {
+  //           const textField = JSON.stringify(layer.layout["text-field"]);
+
+  //           const isNameLayer =
+  //             textField.includes("name:en") || textField.includes('"name"');
+
+  //           if (isNameLayer) {
+  //             layer.layout["text-field"] = [
+  //               "coalesce",
+  //               ["get", "name:ar"],
+  //               ["get", "name"],
+  //               ["get", "name:en"],
+  //             ];
+  //           }
+  //         }
+
+  //         // منع نقاط الـ park من الدخول في line layers
+  //         if (layer.type === "line" && !layer.filter) {
+  //           layer.filter = ["!=", "$type", "Point"];
+  //         }
+
+  //         return layer;
+  //       });
+
+  //       // 6. استخدام MBTiles المحلي
+  //       dynamicStyle.sources.openmaptiles.url = `mbtiles://${dbPath}`;
+
+  //       // 7. الحد الأقصى للـZoom
+  //       dynamicStyle.sources.openmaptiles.maxzoom = 14;
+
+  //       // 8. Glyphs
+  //       dynamicStyle.glyphs = mapStyleJson.glyphs;
+
+  //       // 9. حفظ الـStyle المعدل
+  //       setOfflineStyle(dynamicStyle);
+  //     } catch (error) {
+  //       console.error("Failed to load offline map assets:", error);
+  //     }
+  //   }
+
+  //   setupOfflineMap();
+  // }, []);
+
   useEffect(() => {
     async function setupOfflineMap() {
       try {
@@ -331,7 +446,6 @@ export default function Index() {
         console.error("Failed to load offline map assets:", error);
       }
     }
-
     setupOfflineMap();
   }, []);
 
@@ -403,8 +517,7 @@ export default function Index() {
       }
 
       const busGeometry = JSON.parse(busStep.geojson);
-      const busCoordinates = busGeometry.coordinates as number[][];
-
+      const busCoordinates = busGeometry.geometry?.coordinates as number[][];
       if (!busCoordinates.length) {
         continue;
       }
@@ -414,9 +527,11 @@ export default function Index() {
       // -----------------------------
       if (boardingTransfer) {
         const transferGeometry = JSON.parse(boardingTransfer.geojson);
-        const coordinates = transferGeometry.coordinates as number[][];
 
-        if (coordinates.length) {
+        const coordinates = transferGeometry.geometry
+          ?.coordinates as number[][];
+
+        if (coordinates?.length) {
           const busStart = busCoordinates[0];
 
           const nearest = coordinates.reduce((best, point) => {
@@ -440,9 +555,11 @@ export default function Index() {
       // -----------------------------
       if (alightingTransfer) {
         const transferGeometry = JSON.parse(alightingTransfer.geojson);
-        const coordinates = transferGeometry.coordinates as number[][];
 
-        if (coordinates.length) {
+        const coordinates = transferGeometry.geometry
+          ?.coordinates as number[][];
+
+        if (coordinates?.length) {
           const busEnd = busCoordinates[busCoordinates.length - 1];
 
           const nearest = coordinates.reduce((best, point) => {
@@ -492,7 +609,13 @@ export default function Index() {
        * const data = await response.json();
        */
 
-      const response = MOCK_ROUTE_RESPONSE;
+      // const response = MOCK_ROUTE_RESPONSE;
+      const response = await routeOffline(
+        origin.lngLat[0],
+        origin.lngLat[1],
+        destination.lngLat[0],
+        destination.lngLat[1],
+      );
       setRouteResponse(response);
       const { boardingPoints, alightingPoints } =
         extractBoardingAndAlightingPoints(response.steps);
@@ -501,16 +624,20 @@ export default function Index() {
       setAlightingPoints(alightingPoints);
 
       // تحويل كل GeoJSON إلى Feature
-      const features = response.steps.map((step) => ({
-        type: "Feature",
-        properties: {
-          step_order: step.step_order,
-          edge_type: step.edge_type,
-          route_name: step.route_name,
-          duration_minutes: step.duration_minutes,
-        },
-        geometry: JSON.parse(step.geojson),
-      }));
+      const features = response.steps.map((step) => {
+        const stepFeature = JSON.parse(step.geojson);
+
+        return {
+          type: "Feature",
+          properties: {
+            step_order: step.step_order,
+            edge_type: step.edge_type,
+            route_name: step.route_name,
+            duration_minutes: step.duration_minutes,
+          },
+          geometry: stepFeature.geometry,
+        };
+      });
 
       // FeatureCollection لاستخدامها مع MapLibre
       const featureCollection = {
