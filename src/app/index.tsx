@@ -10,6 +10,7 @@ import { Asset } from "expo-asset";
 import * as FileSystem from "expo-file-system/legacy";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Linking,
   Pressable,
   StyleSheet,
@@ -215,6 +216,7 @@ export default function Index() {
   const [routeResponse, setRouteResponse] = useState<RouteResponse | null>(
     null,
   );
+  const [mapLoaded, setMapLoaded] = useState(false);
 
   /* =========================================================
      Offline Map Setup
@@ -655,7 +657,8 @@ export default function Index() {
   if (!offlineStyle) {
     return (
       <View style={styles.center}>
-        <Text style={styles.loadingText}>Loading offline map...</Text>
+        <ActivityIndicator size="large" color="#E5484D" />
+        <Text style={styles.loadingText}>يتم تحميل الخريطة...</Text>
       </View>
     );
   }
@@ -671,6 +674,7 @@ export default function Index() {
         mapStyle={offlineStyle}
         logo={false}
         attribution={false}
+        onDidFinishLoadingMap={() => setMapLoaded(true)}
         onPress={(event) => handleMapPress(event.nativeEvent.lngLat as LngLat)}
       >
         <Camera
@@ -834,6 +838,13 @@ export default function Index() {
           </ViewAnnotation>
         ))}
       </Map>
+
+      {!mapLoaded && (
+        <View style={styles.mapLoader}>
+          <ActivityIndicator size="large" color="#E5484D" />
+          <Text style={styles.mapLoaderText}>يتم تحميل الخريطة...</Text>
+        </View>
+      )}
 
       {/* ===================================================
     Search Bar
@@ -1134,6 +1145,26 @@ const styles = StyleSheet.create({
 
   loadingText: {
     color: "white",
+    marginTop: 12,
+  },
+
+  mapLoader: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 200,
+  },
+
+  mapLoaderText: {
+    marginTop: 12,
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#555555",
   },
 
   /* =========================
