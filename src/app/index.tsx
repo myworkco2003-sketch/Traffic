@@ -24,7 +24,6 @@ import searchIndex from "../../assets/search-index.json";
 import mapStyleJson from "../../assets/style.json";
 import { Pin } from "../components/Pin";
 import { TripDetailsSheet } from "../components/TripDetailsSheet";
-import { loadOfflineGraph } from "../routing/OfflineGraphLoader";
 import { routeOffline } from "../routing/OfflineRouter";
 import {
   MAP_BOUNDS,
@@ -624,8 +623,40 @@ export default function Index() {
       setAlightingPoints(alightingPoints);
 
       // تحويل كل GeoJSON إلى Feature
+      // const features = response.steps.map((step) => {
+      //   const stepFeature = JSON.parse(step.geojson);
+
+      //   return {
+      //     type: "Feature",
+      //     properties: {
+      //       step_order: step.step_order,
+      //       edge_type: step.edge_type,
+      //       route_name: step.route_name,
+      //       duration_minutes: step.duration_minutes,
+      //     },
+      //     geometry: stepFeature.geometry,
+      //   };
+      // });
+      const busColors = ["#E5484D", "#2563EB", "#16A34A", "#F59E0B"];
+
+      const busRouteColors: Record<string, string> = {};
+      let nextBusColorIndex = 0;
+
       const features = response.steps.map((step) => {
         const stepFeature = JSON.parse(step.geojson);
+
+        let busColor: string | undefined;
+
+        if (step.edge_type === "bus") {
+          if (!busRouteColors[step.route_name]) {
+            busRouteColors[step.route_name] =
+              busColors[nextBusColorIndex % busColors.length];
+
+            nextBusColorIndex++;
+          }
+
+          busColor = busRouteColors[step.route_name];
+        }
 
         return {
           type: "Feature",
@@ -634,6 +665,7 @@ export default function Index() {
             edge_type: step.edge_type,
             route_name: step.route_name,
             duration_minutes: step.duration_minutes,
+            bus_color: busColor,
           },
           geometry: stepFeature.geometry,
         };
@@ -820,41 +852,6 @@ export default function Index() {
 
         {routeGeoJson && (
           <GeoJSONSource id="trip-route" data={routeGeoJson}>
-            {/* Walking */}
-            {/* <Layer
-              id="trip-route-walk"
-              type="line"
-              filter={[
-                '==',
-                ['get', 'edge_type'],
-                'walk',
-              ]}
-              style={{
-                lineColor: '#208AEF',
-                lineWidth: 5,
-                lineCap: 'round',
-                lineJoin: 'round',
-              }}
-            /> */}
-
-            {/* Transfer */}
-            {/* <Layer
-              id="trip-route-transfer"
-              type="line"
-              filter={[
-                '==',
-                ['get', 'edge_type'],
-                'transfer',
-              ]}
-              style={{
-                lineColor: '#888888',
-                lineWidth: 4,
-                lineDasharray: [2, 2],
-                lineCap: 'round',
-                lineJoin: 'round',
-              }}
-            /> */}
-
             {/* Walking + Transfer */}
             <Layer
               id="trip-route-walk-transfer"
@@ -876,13 +873,27 @@ export default function Index() {
             />
 
             {/* Bus */}
-            <Layer
+            {/* <Layer
               id="trip-route-bus"
               type="line"
               filter={["==", ["get", "edge_type"], "bus"]}
               paint={{
                 "line-color": "#E5484D",
                 "line-width": 7,
+              }}
+              layout={{
+                "line-cap": "round",
+                "line-join": "round",
+              }}
+            /> */}
+            <Layer
+              id="trip-route-bus"
+              type="line"
+              filter={["==", ["get", "edge_type"], "bus"]}
+              paint={{
+                "line-color": ["get", "bus_color"],
+                "line-width": 7,
+                "line-opacity": 0.68,
               }}
               layout={{
                 "line-cap": "round",
